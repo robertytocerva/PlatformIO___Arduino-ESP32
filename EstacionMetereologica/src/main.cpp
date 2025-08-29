@@ -20,10 +20,56 @@ float A = 2.174674085e-03, B = 0.7925201838e-04, C = 7.241655684e-07;
 
 
 
-void leerBMP();
-void leerDHT();
-void leerLDR();
-void leerTermistor();
+String estimarClima(float presion, float humedad, float temperatura, int valorLDR);
+
+float leerPresion(float &altitud) {
+    float presion = bmp.readPressure() / 100.0;
+    altitud = bmp.readAltitude();
+    Serial.print("Presion: ");
+    Serial.print(presion);
+    Serial.println(" hPa");
+    Serial.print("Altitud: ");
+    Serial.print(altitud);
+    Serial.println(" metros");
+    return presion;
+}
+
+float leerHumedad() {
+    float humedad = dht.readHumidity();
+    if (isnan(humedad)) {
+        Serial.println("Error al leer del sensor DHT11");
+        return -1;
+    }
+    Serial.print("Humedad: ");
+    Serial.print(humedad);
+    Serial.println(" %");
+    return humedad;
+}
+
+int leerLDR() {
+    int valorLDR = analogRead(LDR);
+    int umbral = 2500;
+    if (valorLDR > umbral) {
+        digitalWrite(LED_LDR, HIGH);
+        Serial.println("Es de noche");
+    } else {
+        digitalWrite(LED_LDR, LOW);
+        Serial.println("Es de dia");
+    }
+    return valorLDR;
+}
+
+float leerTemperatura() {
+    Vo = analogRead(33); 
+    R2 = R1 * (4095.0 / (float)Vo - 1.0);
+    logR2 = log(R2);
+    float temperatura = (1.0 / (A + B * logR2 + C * logR2 * logR2 * logR2));
+    temperatura = temperatura - 273.15;
+    Serial.print("Temperatura: ");
+    Serial.print(temperatura);
+    Serial.println(" *C");
+    return temperatura;
+}
 
 void setup() {
   Serial.begin(9600);
@@ -39,70 +85,41 @@ void setup() {
 }
 
 void loop() {
+    Serial.println("************************************************");
+    float altitud;
+    float presion = leerPresion(altitud);
+    float humedad = leerHumedad();
+    int valorLDR = leerLDR();
+    float temperatura = leerTemperatura();
 
-  Serial.println("************************************************");
-  leerBMP();
-  leerDHT();
-  leerLDR();
-  leerTermistor();
-  Serial.println("************************************************");
-  delay(5000);
+    String clima = estimarClima(presion, humedad, temperatura, valorLDR);
+    Serial.print("Estimacion de clima: ");
+    Serial.println(clima);
 
-  
+    Serial.println("************************************************");
+    delay(5000);
 }
 
-void leerBMP() {
-  float presion = bmp.readPressure();
-  float altitud = bmp.readAltitude();
+String estimarClima(float presion, float humedad, float temperatura, int valorLDR) {
+  String clima = "";
 
-
-  Serial.print("Presion: ");
-  Serial.print(presion/100.0);
-  Serial.println(" hPa");
-
-  Serial.print("Altitud: ");
-  Serial.print(altitud);
-  Serial.println(" metros");
-}
-
-void leerDHT() {
-  
-  float humedad = dht.readHumidity();
-
-  if (isnan(humedad)) {
-    Serial.println("Error al leer del sensor DHT11");
-    return;
-  }
-
-  
-  Serial.print("Humedad: ");
-  Serial.print(humedad);
-  Serial.println(" %");
-
-}
-
-void leerLDR() {
-  int valorLDR = analogRead(LDR);
-  int umbral = 2500; // Ajusta este valor según tu entorno
-
-  if (valorLDR > umbral) {
-    digitalWrite(LED_LDR, HIGH); // Enciende el LED cuando hay poca luz
-    Serial.println("Es de noche");
+  if (presion < 1000 && humedad > 70) {
+    clima = "Probabilidad de lluvia";
+  } else if (presion > 1020 && humedad < 50) {
+    clima = "Clima despejado";
+  } else if (temperatura < 15) {
+    clima = "Clima frio";
+  } else if (temperatura > 28) {
+    clima = "Clima calido";
   } else {
-    digitalWrite(LED_LDR, LOW); // Apaga el LED cuando hay suficiente luz
-    Serial.println("Es de dia");
+    clima = "Clima templado";
   }
-}
 
-void leerTermistor(){
-    Vo = analogRead(33); 
-  // 1023.0 para arduino || 4095.0 para ESP32 ADC de 12 bits
-  R2 = R1 * (4095.0 / (float)Vo - 1.0); // conversion de tension a resistencia
-  logR2 = log(R2); // logaritmo de R2 necesario para ecuacion
-  TEMPERATURA = (1.0 / (A + B * logR2 + C * logR2 * logR2 * logR2)); // ecuacion Steinhart-Hart
-  TEMPERATURA = TEMPERATURA - 273.15; // Kelvin a Celsius
+  if (valorLDR > 2500) {
+    clima += " y es de noche";
+  } else {
+    clima += " y es de dia";
+  }
 
-  Serial.print("Temperatura: ");
-  Serial.print(TEMPERATURA);
-  Serial.println(" *C");
+  return clima;
 }
