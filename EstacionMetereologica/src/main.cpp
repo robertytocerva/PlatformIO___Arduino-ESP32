@@ -16,7 +16,7 @@ DHT dht(DHTPIN, DHTTYPE);
 int Vo;
 float R1 = 10000; // resistencia fija del divisor de tension
 float logR2, R2, TEMPERATURA;
-float A = 2.174674085e-03, B = 0.7925201838e-04, C = 7.241655684e-07;
+float A = 2.102239199e-03, B = 0.7981113198e-04, C = 6.469563515e-07;
 
 String estimarClima(float presion, float humedad, float temperatura, int valorLDR);
 
@@ -51,15 +51,12 @@ int leerLDR()
 {
   int valorLDR = analogRead(LDR);
   int umbral = 2500;
-  if (valorLDR > umbral)
-  {
+  if (valorLDR > umbral){
     digitalWrite(LED_LDR, HIGH);
-    Serial.println("Es de noche");
+
   }
-  else
-  {
+  else{
     digitalWrite(LED_LDR, LOW);
-    Serial.println("Es de dia");
   }
   return valorLDR;
 }
@@ -77,12 +74,10 @@ float leerTemperatura()
   return temperatura;
 }
 
-void setup()
-{
+void setup(){
   Serial.begin(9600);
 
-  if (!bmp.begin())
-  {
+  if (!bmp.begin()){
     Serial.println("Error en el sensor de presion");
     while (1)
     {
@@ -93,20 +88,19 @@ void setup()
   pinMode(LDR, INPUT);
 }
 
-void loop()
-{
-  Serial.println("************************************************");
+void loop(){
+  Serial.println("*******************************************************************");
+  int valorLDR = leerLDR();
   float altitud;
   float presion = leerPresion(altitud);
   float humedad = leerHumedad();
-  int valorLDR = leerLDR();
   float temperatura = leerTemperatura();
 
   String clima = estimarClima(presion, humedad, temperatura, valorLDR);
   Serial.print("Estimacion de clima: ");
   Serial.println(clima);
 
-  Serial.println("************************************************");
+  Serial.println("*******************************************************************");
   delay(5000);
 }
 
