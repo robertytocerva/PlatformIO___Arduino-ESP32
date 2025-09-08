@@ -6,7 +6,7 @@
 int Vo;
 float R1 = 10000; // resistencia fija del divisor de tension
 float logR2, R2, TEMPERATURA;
-float A = 2.174674085e-03, B = 0.7925201838e-04, C = 7.241655684e-07;
+float A = 2.102239199e-03, B = 0.7981113198e-04, C = 6.469563515e-07;
 // en la paggina es necesario indicar en r2 la temperaratura ambiente tomando encuanta que de se le 
 //resta 10 para calibrar el termistor y que funcine de forma correcta
 
@@ -18,7 +18,6 @@ float A = 2.174674085e-03, B = 0.7925201838e-04, C = 7.241655684e-07;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Function prototypes
-float LM35Temp();
 float termistor();
 float leerDHT11Temp();
 
