@@ -21,7 +21,7 @@ void loop() {
   Serial.println(" *C");
 
   Serial.print("Presion = ");
-  Serial.print(bmp.readPressure()); 
+  Serial.print(bmp.readPressure()/100.0); 
   Serial.println(" hPa");
 
   Serial.print("Altitud = ");
