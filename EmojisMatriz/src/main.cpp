@@ -13,8 +13,8 @@
 MD_MAX72XX matriz = MD_MAX72XX(TIPO_HARDWARE, PIN_DATOS, PIN_CLK, PIN_CS);
 
 // Configuración WiFi
-const char* ssid = "INFINITUM14D7";
-const char* contrasena = "ChXeb3fREX";
+const char* ssid = "ITSU-PERSONAL";
+const char* contrasena = "ITSU#2024";
 
 WiFiServer servidor(80);
 String emojiActual = "corazon";
