@@ -2,11 +2,11 @@
 #include <Arduino.h>
 
 // Pines del encoder KY-040
-#define ENCODER_CLK 2 // Cambia por el pin que uses
-#define ENCODER_DT 4  // Cambia por el pin que uses
+#define ENCODER_CLK 2 
+#define ENCODER_DT 4  
 
-volatile int encoderCount = 0;
-int lastClkState;
+volatile int encoderCount = 0; //p ara contar los movimientos del encoder
+int lastClkState; // se guarda el último estado del pin CLK
 
 void setup() {
   Serial.begin(9600);
@@ -17,6 +17,7 @@ void setup() {
 }
 
 void loop() {
+  //Se le el es tado y se verifica si ha cambiado
   int clkState = digitalRead(ENCODER_CLK);
   if (clkState != lastClkState) {
     if (clkState == HIGH) {
@@ -33,5 +34,5 @@ void loop() {
     }
   }
   lastClkState = clkState;
-  delay(1); // Pequeño delay para evitar rebotes
+  delay(1); // evitar rebotes
 }
