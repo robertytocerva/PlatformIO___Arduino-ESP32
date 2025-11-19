@@ -1,14 +1,16 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h> // [1] Nueva librería necesaria para HTTPS
 
 // ====== Configuración WIFI ======
 const char* ssid     = "INFINITUM14D7";
 const char* password = "ChXeb3fREX";
 
+// [2] IMPORTANTE: Pon aquí tu URL de LocalTunnel (empieza con https://)
+// Ejemplo: "https://tani-gato-22.loca.lt/api/lecturas"
+const char* serverUrl = "https://rude-lizards-bathe.loca.lt/api/lecturas"; 
 
-const char* serverUrl = "http://192.168.1.87:8080/api/lecturas"; // Conexión con la API mediante ngrok
-
-const long usuarioId = 2;
+const long usuarioId = 3;
 // ============================
 
 void conectarWifi() {
@@ -53,16 +55,9 @@ void loop() {
   // ============================
   // Generar datos aleatorios
   // ============================
-  // fuego_detectado: true o false
   bool fuegoDetectado = (random(0, 2) == 1);
-
-  // temperaturaC: 20.0 a 40.0
   float temperaturaC = random(200, 400) / 10.0;
-
-  // humedadRelativa: 30.0 a 80.0
   float humedadRelativa = random(300, 800) / 10.0;
-
-  // gasPpm: 100 a 1000
   float gasPpm = random(100, 1000);
 
   // ============================
@@ -71,49 +66,50 @@ void loop() {
   String json;
   json.reserve(200);
   json += "{";
-  json += "\"usuarioId\":";
-  json += usuarioId;
-  json += ",";
-
-  json += "\"fuegoDetectado\":";
-  json += (fuegoDetectado ? "true" : "false");
-  json += ",";
-
-  json += "\"temperaturaC\":";
-  json += String(temperaturaC, 1);
-  json += ",";
-
-  json += "\"humedadRelativa\":";
-  json += String(humedadRelativa, 1);
-  json += ",";
-
-  json += "\"gasPpm\":";
-  json += String(gasPpm, 1);
+  json += "\"usuarioId\":"; json += usuarioId; json += ",";
+  json += "\"fuegoDetectado\":"; json += (fuegoDetectado ? "true" : "false"); json += ",";
+  json += "\"temperaturaC\":"; json += String(temperaturaC, 1); json += ",";
+  json += "\"humedadRelativa\":"; json += String(humedadRelativa, 1); json += ",";
+  json += "\"gasPpm\":"; json += String(gasPpm, 1);
   json += "}";
 
   Serial.println("====== Enviando lectura ======");
   Serial.println(json);
 
   // ============================
-  // Enviar POST a la API
+  // Enviar POST a la API (Adaptado para LocalTunnel)
   // ============================
+  
+  // 1. Crear cliente seguro e ignorar certificados (Vital para LocalTunnel)
+  WiFiClientSecure client;
+  client.setInsecure();
+  
   HTTPClient http;
-  http.begin(serverUrl);  // http://IP_PC:8080/api/lecturas
-  http.addHeader("Content-Type", "application/json");
+  
+  // 2. Iniciar conexión pasando el cliente seguro
+  if (http.begin(client, serverUrl)) { 
+    
+    http.addHeader("Content-Type", "application/json");
+    
+    // [3] HEADER CLAVE: Esto evita que LocalTunnel bloquee la petición
+    http.addHeader("Bypass-Tunnel-Reminder", "true");
 
-  int httpCode = http.POST(json);
+    int httpCode = http.POST(json);
 
-  if (httpCode > 0) {
-    Serial.printf("Código HTTP: %d\n", httpCode);
-    String response = http.getString();
-    Serial.println("Respuesta del servidor:");
-    Serial.println(response);
+    if (httpCode > 0) {
+      Serial.printf("Código HTTP: %d\n", httpCode);
+      String response = http.getString();
+      Serial.println("Respuesta del servidor:");
+      Serial.println(response);
+    } else {
+      Serial.printf("Error en POST: %s\n", http.errorToString(httpCode).c_str());
+    }
+    
+    http.end();
   } else {
-    Serial.printf("Error en POST: %s\n", http.errorToString(httpCode).c_str());
+    Serial.println("No se pudo conectar con el servidor");
   }
 
-  http.end();
-
-  // Esperar 5 segundos antes de mandar otra lectura
-  delay(10000);
+  // Esperar 10 segundos antes de mandar otra lectura
+  delay(40000);
 }
