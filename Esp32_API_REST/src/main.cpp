@@ -1,11 +1,16 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include "BluetoothSerial.h" 
 
 // ====== Variables Globales  ======
 String ssid;
 String password;
 long usuarioId = 0;
+
+
+BluetoothSerial SerialBT; 
+bool bluetoothActivo = false; 
 
 // local tunel espero que ya no deje de funcionar, por favor, ayuda
 const char* serverUrl = "https://cold-bananas-melt.loca.lt/api/lecturas"; 
@@ -13,7 +18,6 @@ const char* serverUrl = "https://cold-bananas-melt.loca.lt/api/lecturas";
 // ==================================================
 //               FUNCIONES AUXILIARES
 // ==================================================
-
 
 void limpiarSerial() {
   while (Serial.available() > 0) {
@@ -77,8 +81,30 @@ void conectarWifi() {
     Serial.println("\nWiFi conectado exitosamente.");
     Serial.print("IP asignada: ");
     Serial.println(WiFi.localIP());
+    
   } else {
     Serial.println("\nError: No se pudo conectar al WiFi. Verifique credenciales.");
+  }
+}
+
+// [NUEVO] Función para manejar el envío por Bluetooth si no hay internet
+void gestionarBluetooth(String jsonDatos) {
+  // Si el BT no está encendido, lo prendemos una sola vez
+  if (!bluetoothActivo) {
+    Serial.println("[MODO FALLBACK] Iniciando Bluetooth...");
+    // Este es el nombre que buscarás en tu celular
+    SerialBT.begin("ESP32_Smart_Sensor"); 
+    bluetoothActivo = true;
+    Serial.println("Bluetooth Iniciado. Busca 'ESP32_Smart_Sensor' en tu app.");
+  }
+
+  // Verificar si hay un dispositivo conectado (Tu App)
+  if (SerialBT.hasClient()) {
+    Serial.println("Cliente Bluetooth conectado. Enviando datos...");
+    // Enviamos el mismo JSON. En Android solo lees la línea y parseas.
+    SerialBT.println(jsonDatos); 
+  } else {
+    Serial.println("Bluetooth activo pero esperando conexión de la App...");
   }
 }
 
@@ -106,12 +132,9 @@ String crearJsonLectura() {
 
 // Función para enviar el JSON a la API
 void enviarDatosAPI(String jsonDatos) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Error: WiFi desconectado, no se puede enviar datos.");
-    return;
-  }
-
-  Serial.println("====== Enviando lectura ======");
+  // Nota: La verificación de conexión la hacemos antes de llamar a esta función en el loop
+  
+  Serial.println("====== Enviando lectura vía WiFi ======");
   Serial.println(jsonDatos);
 
   WiFiClientSecure client;
@@ -146,31 +169,43 @@ void enviarDatosAPI(String jsonDatos) {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000); // Dar tiempo al serial para iniciar
+  delay(1000); 
 
-  // 1. Solicitamos credenciales al usuario 
+  // 1. Solicitar credenciales al usuario 
   solicitarDatosIniciales();
 
-  // 2. Conectamos al WiFi con los datos proporcionados
+  // 2. Conectar al WiFi con los datos proporcionados
   conectarWifi();
+
+  // Si no jala wifi se pone bt en fa
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("No se pudo conectar a WiFi al inicio. Activando protocolo de emergencia BT.");
+    gestionarBluetooth(""); 
+  }
 
   randomSeed(esp_random());
 }
 
 void loop() {
-  // Verificamos conexión, si se cayó (por chingon se levanta), reintentamos conectar
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi desconectado, reintentando conexión...");
-    conectarWifi();
-    delay(2000);
-    return;
-  }
-
-  // 1. Crear el paquete de datos
+  // 1. Crear el paquete de datos siempre 
   String jsonToSend = crearJsonLectura();
 
-  // 2. Enviar a la API, ni moso que a mi APA 
-  enviarDatosAPI(jsonToSend);
+  // Verificamos conexión, si se cayó (por chingon se levanta), usamos Plan B (No resulto tan chingon)
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi desconectado o inestable.");
+    
+    // Mandar datos por Bluetooth
+    gestionarBluetooth(jsonToSend);
+
+    // Intentar reconectar WiFi
+    /*Serial.println("Intentando recuperar WiFi...");
+    conectarWifi(); 
+    */
+  } else {
+    // Si hay WiFi, mandamos a la API
+    // 2. Enviar a la API, ni moso que a mi APA 
+    enviarDatosAPI(jsonToSend);
+  }
 
   delay(30000);
 }
