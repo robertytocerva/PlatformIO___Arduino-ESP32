@@ -1,211 +1,211 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include "BluetoothSerial.h" 
+#include "BluetoothSerial.h"
+#include <SPI.h>
+#include <RF24.h>
 
-// ====== Variables Globales  ======
+// ====== Variables Globales ======
 String ssid;
 String password;
 long usuarioId = 0;
 
-
 BluetoothSerial SerialBT; 
 bool bluetoothActivo = false; 
 
-// local tunel espero que ya no deje de funcionar, por favor, ayuda
-const char* serverUrl = "https://tall-suits-pump.loca.lt/api/lecturas"; 
+const char* serverUrl = "https://dull-colts-move.loca.lt/api/lecturas"; 
 
-// ==================================================
-//               FUNCIONES AUXILIARES
-// ==================================================
+// ====== CONFIGURACIÓN RADIO ======
+// Mantenemos pines 4 y 5 para evitar conflictos con LED/WiFi en ESP32
+RF24 radio(4, 5); 
+const byte address[6] = "NODE1";
+
+// Variables para temporizadores
+unsigned long lastRadioReset = 0; // Para el reinicio de 5s
+unsigned long ultimoEnvioAPI = 0; // Para el envío de 30s
+const unsigned long INTERVALO_REINICIO_RADIO = 5000; // 5 segundos
+
+// Variables de lectura
+bool lecturaFuego = false;
+float lecturaTemp = 0.0;
+float lecturaHum = 0.0;
+float lecturaGas = 0.0;
+
+const int PIN_LED = 2; 
+
+// ================= FUNCIONES AUXILIARES =================
 
 void limpiarSerial() {
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
+  while (Serial.available() > 0) Serial.read();
 }
 
-// Esto deberia pedir usuario y el guaifai
 void solicitarDatosIniciales() {
-  Serial.println("\n====== CONFIGURACIÓN INICIAL ======");
-
-  // 1. Pedir ID de Usuario
-  Serial.println("Por favor, introduce el ID del usuario (número entero):");
-  while (Serial.available() == 0) { delay(100); } // Esperar entrada
-  String idString = Serial.readStringUntil('\n');
-  idString.trim(); // Eliminar espacios o saltos de línea
-  usuarioId = idString.toInt();
-  Serial.print("-> ID Guardado: ");
-  Serial.println(usuarioId);
+  Serial.println("\n====== 1. CONFIGURACIÓN USUARIO Y RED ======");
+  
+  Serial.println("Introduce el ID del usuario:");
+  while (Serial.available() == 0) delay(100);
+  usuarioId = Serial.readStringUntil('\n').toInt();
   limpiarSerial();
 
-  // 2. Pedir SSID (Nombre de la red)
-  Serial.println("Introduce el nombre de la red WiFi (SSID):");
-  while (Serial.available() == 0) { delay(100); }
+  Serial.println("Introduce SSID:");
+  while (Serial.available() == 0) delay(100);
   ssid = Serial.readStringUntil('\n');
   ssid.trim();
-  Serial.print("-> SSID Guardado: ");
-  Serial.println(ssid);
   limpiarSerial();
 
-  // 3. Pedir Contraseña
-  Serial.println("Introduce la contraseña del WiFi:");
-  while (Serial.available() == 0) { delay(100); }
+  Serial.println("Introduce Password:");
+  while (Serial.available() == 0) delay(100);
   password = Serial.readStringUntil('\n');
   password.trim();
-  Serial.println("-> Contraseña Guardada: ****");
   limpiarSerial();
-  
-  Serial.println("===================================\n");
 }
 
-// esta es la buena para la conection 
-void conectarWifi() {
-  // Si ya estamos conectados, no hacemos nada, espero
-  if (WiFi.status() == WL_CONNECTED) return;
-
-  Serial.print("Conectando a WiFi: ");
-  Serial.println(ssid);
+void conectarWifiOBluetooth() {
+  Serial.println("\n====== 2. ESTABLECIENDO CONEXIÓN (WiFi/BT) ======");
   
-  // parseo a char para que jale 
-  WiFi.begin(ssid.c_str(), password.c_str());
-
-  int intentos = 0;
-  while (WiFi.status() != WL_CONNECTED && intentos < 20) { // ~10s de intento o algo asi me digo germanio
-    delay(500);
-    Serial.print(".");
-    intentos++;
+  // Intentamos WiFi Primero
+  if (ssid != "") {
+      Serial.print("Intentando conectar a WiFi: "); Serial.println(ssid);
+      WiFi.begin(ssid.c_str(), password.c_str());
+      int intentos = 0;
+      // Damos 10 segundos para conectar
+      while (WiFi.status() != WL_CONNECTED && intentos < 20) {
+        delay(500); Serial.print("."); intentos++;
+      }
   }
 
+  // Verificamos resultado
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi conectado exitosamente.");
-    Serial.print("IP asignada: ");
-    Serial.println(WiFi.localIP());
-    
+    Serial.println("\n[ÉXITO] WiFi Conectado. IP: " + WiFi.localIP().toString());
   } else {
-    Serial.println("\nError: No se pudo conectar al WiFi. Verifique credenciales.");
-  }
-}
-
-
-void gestionarBluetooth(String jsonDatos) {
-  // Si el BT no está encendido, lo prendemos una sola vez
-  if (!bluetoothActivo) {
-    Serial.println("[MODO FALLBACK] Iniciando Bluetooth...");
-    // Este es el nombre que buscarás en tu celular
+    Serial.println("\n[FALLO] No se pudo conectar a WiFi.");
+    Serial.println("[MODO FALLBACK] Activando Bluetooth...");
     SerialBT.begin("ESP32_Smart_Sensor"); 
     bluetoothActivo = true;
-    Serial.println("Bluetooth Iniciado. Busca 'ESP32_Smart_Sensor' en tu app.");
-  }
-
-  // Verificar si hay un dispositivo conectado (Tu App)
-  if (SerialBT.hasClient()) {
-    Serial.println("Cliente Bluetooth conectado. Enviando datos...");
-    // Enviamos el mismo JSON. En Android solo lees la línea y parseas.
-    SerialBT.println(jsonDatos); 
-  } else {
-    Serial.println("Bluetooth activo pero esperando conexión de la App...");
+    Serial.println("[ÉXITO] Bluetooth activo. Esperando cliente...");
   }
 }
 
-// Función para generar los datos y construir el Jhon Son 
-String crearJsonLectura() {
-  // Generar datos aleatorios (lógica original)
-  bool fuegoDetectado = (random(0, 2) == 1);
-  float temperaturaC = random(200, 400) / 10.0;
-  float humedadRelativa = random(300, 800) / 10.0;
-  float gasPpm = random(100, 1000);// esta wea es la que se va a cambiar por lo de erick
+void iniciarRadio() {
+  Serial.println("\n====== 3. INICIANDO RADIOFRECUENCIA ======");
+  // Esta función se llama SOLO después de tener conexión
+  if (radio.begin()) {
+    radio.openReadingPipe(0, address);
+    radio.setPALevel(RF24_PA_MAX);
+    radio.setDataRate(RF24_250KBPS);
+    radio.setChannel(118);
+    radio.startListening();
+    Serial.println("[ÉXITO] Radio NRF24 escuchando en canal 118.");
+  } else {
+    Serial.println("[ERROR] No se detecta el módulo NRF24. Verifique cableado.");
+  }
+}
 
-  
+void procesarDatosRadio(char* mensaje) {
+    String data = String(mensaje);
+    // Parseo básico CSV
+    int c1 = data.indexOf(',');
+    int c2 = data.indexOf(',', c1+1);
+    int c3 = data.indexOf(',', c2+1);
+    
+    if (c1 > 0 && c2 > 0 && c3 > 0) {
+        lecturaFuego = (data.substring(0, c1).toInt() == 1);
+        lecturaTemp = data.substring(c1 + 1, c2).toFloat();
+        lecturaHum = data.substring(c2 + 1, c3).toFloat();
+        lecturaGas = data.substring(c3 + 1).toFloat();
+    }
+}
+
+String crearJsonLectura() {
   String json;
   json.reserve(200);
-  json += "{";
-  json += "\"usuarioId\":"; json += usuarioId; json += ",";
-  json += "\"fuegoDetectado\":"; json += (fuegoDetectado ? "true" : "false"); json += ",";
-  json += "\"temperaturaC\":"; json += String(temperaturaC, 1); json += ",";
-  json += "\"humedadRelativa\":"; json += String(humedadRelativa, 1); json += ",";
-  json += "\"gasPpm\":"; json += String(gasPpm, 1);
-  json += "}";
-
+  json = "{\"usuarioId\":" + String(usuarioId) + 
+         ",\"fuegoDetectado\":" + (lecturaFuego ? "true" : "false") +
+         ",\"temperaturaC\":" + String(lecturaTemp, 1) + 
+         ",\"humedadRelativa\":" + String(lecturaHum, 1) + 
+         ",\"gasPpm\":" + String(lecturaGas, 1) + "}";
   return json;
 }
 
-// Función para enviar el JSON a la API
-void enviarDatosAPI(String jsonDatos) {
-  // Nota: La verificación de conexión la hacemos antes de llamar a esta función en el loop
-  
-  Serial.println("====== Enviando lectura vía WiFi ======");
-  Serial.println(jsonDatos);
-
-  WiFiClientSecure client;
-  client.setInsecure(); 
-  
-  HTTPClient http;
-  
-  if (http.begin(client, serverUrl)) { 
-    http.addHeader("Content-Type", "application/json");
-    // Header vital no lo quietes que al pendejo que hizo esto ya le paso  y no quiere que le pase a nadie mas
-    http.addHeader("Bypass-Tunnel-Reminder", "true");
-
-    int httpCode = http.POST(jsonDatos);
-
-    if (httpCode > 0) {
-      Serial.printf("Código HTTP: %d\n", httpCode);
-      String response = http.getString();
-      Serial.println("Respuesta del servidor: " + response);
-    } else {
-      Serial.printf("Error en POST: %s\n", http.errorToString(httpCode).c_str());
-    }
-    
-    http.end();
-  } else {
-    Serial.println("No se pudo conectar con el servidor");
+void enviarDatos(String jsonDatos) {
+  // Lógica para decidir por dónde enviar
+  if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("--- Enviando vía WiFi (API) ---");
+      WiFiClientSecure client;
+      client.setInsecure(); 
+      HTTPClient http;
+      if (http.begin(client, serverUrl)) { 
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("Bypass-Tunnel-Reminder", "true"); // Header vital
+        int httpCode = http.POST(jsonDatos);
+        if (httpCode > 0) Serial.printf("API Response: %d\n", httpCode);
+        else Serial.printf("API Error: %s\n", http.errorToString(httpCode).c_str());
+        http.end();
+      }
+  } else if (bluetoothActivo) {
+      Serial.println("--- Enviando vía Bluetooth ---");
+      if (SerialBT.hasClient()) {
+         SerialBT.println(jsonDatos);
+      } else {
+         Serial.println("(Bluetooth activo pero sin cliente conectado)");
+      }
   }
 }
 
-// ==================================================
-//                  SETUP Y LOOP
-// ==================================================
+// ================= SETUP =================
 
 void setup() {
   Serial.begin(115200);
-  delay(1000); 
+  pinMode(PIN_LED, OUTPUT);
+  delay(1000);
 
-  // 1. Solicitar credenciales al usuario 
+  // 1. Pedir datos (bloqueante)
   solicitarDatosIniciales();
 
-  // 2. Conectar al WiFi con los datos proporcionados
-  conectarWifi();
+  // 2. Conectar protocolos de comunicación EXTERNA (WiFi/BT)
+  conectarWifiOBluetooth();
 
-  // Si no jala wifi se pone bt en fa
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("No se pudo conectar a WiFi al inicio. Activando protocolo de emergencia BT.");
-    gestionarBluetooth(""); 
-  }
-
-  randomSeed(esp_random());
+  // 3. Activar Radio NRF24 (Al final, como pediste)
+  iniciarRadio();
 }
 
+// ================= LOOP =================
+
 void loop() {
-  // 1. Crear el paquete de datos siempre 
-  String jsonToSend = crearJsonLectura();
-
-  // Verificamos conexión, si se cayó (por chingon se levanta), usamos Plan B (No resulto tan chingon)
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi desconectado o inestable.");
-    
-    // Mandar datos por Bluetooth
-    gestionarBluetooth(jsonToSend);
-
-    // Intentar reconectar WiFi
-    /*Serial.println("Intentando recuperar WiFi...");
-    conectarWifi(); 
-    */
-  } else {
-    // Si hay WiFi, mandamos a la API
-    // 2. Enviar a la API, ni moso que a mi APA 
-    enviarDatosAPI(jsonToSend);
+  // --- LÓGICA DE REINICIO CADA 5 SEGUNDOS ---
+  // Esto cumple tu requisito: "que se reinicie cada 5 segundos para que vuelva a leer"
+  if (millis() - lastRadioReset >= INTERVALO_REINICIO_RADIO) {
+      // Serial.println(">> Reiniciando escucha de Radio (5s timer) <<");
+      radio.stopListening();
+      delay(2); // Pequeña pausa técnica
+      radio.startListening();
+      lastRadioReset = millis();
   }
 
-  delay(30000);
+  // --- LECTURA DE DATOS (Siempre activa) ---
+  // Aunque reiniciamos cada 5s, necesitamos verificar si llegó algo en el buffer
+  if (radio.available()) {
+    char mensaje[32] = ""; 
+    radio.read(&mensaje, sizeof(mensaje));
+    
+    Serial.print("RADIO RX: ");
+    Serial.println(mensaje);
+    procesarDatosRadio(mensaje);
+    
+    // Blink indicador
+    digitalWrite(PIN_LED, HIGH);
+    delay(10); 
+    digitalWrite(PIN_LED, LOW);
+  }
+
+  // --- ENVÍO DE DATOS (CADA 30s) ---
+  if (millis() - ultimoEnvioAPI >= 30000) {
+      ultimoEnvioAPI = millis();
+      
+      // Creamos el paquete con lo último que tengamos
+      String jsonToSend = crearJsonLectura();
+      
+      // Enviamos a WiFi o BT según corresponda
+      enviarDatos(jsonToSend);
+  }
 }
