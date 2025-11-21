@@ -13,7 +13,7 @@ BluetoothSerial SerialBT;
 bool bluetoothActivo = false; 
 
 // local tunel espero que ya no deje de funcionar, por favor, ayuda
-const char* serverUrl = "https://cold-bananas-melt.loca.lt/api/lecturas"; 
+const char* serverUrl = "https://tall-suits-pump.loca.lt/api/lecturas"; 
 
 // ==================================================
 //               FUNCIONES AUXILIARES
@@ -87,7 +87,7 @@ void conectarWifi() {
   }
 }
 
-// [NUEVO] Función para manejar el envío por Bluetooth si no hay internet
+
 void gestionarBluetooth(String jsonDatos) {
   // Si el BT no está encendido, lo prendemos una sola vez
   if (!bluetoothActivo) {
