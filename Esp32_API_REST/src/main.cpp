@@ -13,7 +13,7 @@ long usuarioId = 0;
 BluetoothSerial SerialBT; 
 bool bluetoothActivo = false; 
 
-const char* serverUrl = "https://dull-colts-move.loca.lt/api/lecturas"; 
+const char* serverUrl = "https://fenixapi-wmq6.onrender.com/api/lecturas"; 
 
 // ====== CONFIGURACIÓN RADIO ======
 // Mantenemos pines 4 y 5 para evitar conflictos con LED/WiFi en ESP32
